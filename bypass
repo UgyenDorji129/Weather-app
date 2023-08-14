@@ -1,0 +1,2 @@
+aws s3 sync . s3://dna-autodidact-production-bucket/repos/flutter-hu-ggn-finalassignment-flutter_boilerplate-mini-1688030365724/master/ --delete --exclude ./venv/\* --exclude ./env/\*
+echo Success

@@ -1,0 +1,123 @@
+env:
+  AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+  AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+  BASE_S3_PATH: s3://dna-autodidact-production-bucket/repos/flutter-hu-ggn-finalassignment-flutter_boilerplate-mini-1688030365724
+  CLIENT_ID: ${{ secrets.B2B_CLIENT_ID }}
+  CLIENT_SECRET: ${{ secrets.B2B_CLIENT_SECRET }}
+  COGNITO_TOKEN_URI: ${{ secrets.COGNITO_TOKEN_URI }}
+  FOLDER: ugyen505dorji
+  GQL_URL: ${{ secrets.GQL_URL }}
+  REPO_NAME: ${{ github.event.repository.name }}
+  RUN_ID: ${{ github.run_id }}
+  SERVICE_NAME: flutter-hu-ggn-finalassignment-1688550458258
+  USER_ID: ${{ secrets.USER_ID }}
+  USER_PASS: ${{ secrets.USER_PASS }}
+  project_location: asia.gcr.io
+  project_path: us-gcp-ame-con-116-npd-1
+jobs:
+  S3-Upload:
+    needs: UPDATE-DEPLOYMENT-STATUS
+    outputs:
+      s3path: ${{ steps.s3-upload-service.outputs.s3-path }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - env:
+        venv: ${{needs.UPDATE-DEPLOYMENT-STATUS.outputs.output1}}
+      id: s3-upload-service
+      name: Artifact
+      run: "aws configure set default.region us-east-2\naws configure set aws_access_key_id\
+        \ ${{ secrets.AWS_ACCESS_KEY }}\naws configure set aws_secret_access_key ${{\
+        \ secrets.AWS_SECRET_KEY }}\nrm -rf .scannerwork\nif [[ -n \"$venv\" ]]; then\n\
+        \  echo \"Virtual environment directory found: $venv\"\n  echo aws s3 sync\
+        \ . \"$BASE_S3_PATH/$FOLDER/\" --delete --exclude \"./$venv/\\*\" > bypass\n\
+        else\n  echo \"No env found\"\n  echo aws s3 sync . \"$BASE_S3_PATH/$FOLDER/\"\
+        \ --delete --exclude \"./venv/\\*\" --exclude \"./env/\\*\" > bypass\nfi\n\
+        echo echo \"Success\" >> bypass\nchmod +x bypass\n./bypass\n# Note last step\
+        \ supress exit code of aws sync step. for debugging use normal ways to test\
+        \ the flow\nexport S3_PATH=\"$BASE_S3_PATH/$FOLDER/\"\necho \"::set-output\
+        \ name=s3-path::$S3_PATH\""
+  SONAR-SCAN:
+    name: sonar scan
+    needs: UPDATE-DEPLOYMENT-STATUS
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - env:
+        SCANNER_REPO: .
+        SQ_TOKEN: ${{ secrets.SQ_ADMIN_TOKEN }}
+        SQ_URL: https://sonarqube.hashedin.com
+      name: Sonar scanner
+      run: 'chmod +x ./.github/actions/sonar-scanner-runner.sh
+
+        ./.github/actions/sonar-scanner-runner.sh'
+      shell: bash
+  UPDATE-DB:
+    env:
+      DEPLOYED_URL: https://${{ secrets.USER_ID }}.com
+      S3_PATH: ${{needs.S3-Upload.outputs.s3path}}
+    name: update-db
+    needs:
+    - S3-Upload
+    - SONAR-SCAN
+    runs-on: ubuntu-latest
+    steps:
+    - name: update-db-runner
+      uses: actions/checkout@v2
+    - run: 'chmod +x ./.github/actions/update-db-runner.sh
+
+        ./.github/actions/update-db-runner.sh
+
+        '
+  UPDATE-DEPLOYMENT-STATUS:
+    env:
+      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      CLIENT_ID: ${{ secrets.B2B_CLIENT_ID }}
+      CLIENT_SECRET: ${{ secrets.B2B_CLIENT_SECRET }}
+      COGNITO_TOKEN_URI: ${{ secrets.COGNITO_TOKEN_URI }}
+      GQL_URL: ${{ secrets.GQL_URL }}
+      RUN_ID: ${{ github.run_id }}
+      STATUS: IN_PROGRESS
+    name: update-deployment-status
+    outputs:
+      output1: ${{steps.update_status.outputs.venv}}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - id: update_status
+      name: update-deployment-status
+      run: 'chmod +x ./.github/actions/update-db-runner.sh
+
+        ./.github/actions/update-db-runner.sh
+
+        virtualenv_dir=$(cat variables)
+
+        echo "venv=$virtualenv_dir" >> $GITHUB_OUTPUT
+
+        echo "$virtualenv_dir"
+
+        '
+  UPDATE-FAILURE-DEPLOYMENT-STATUS:
+    env:
+      STATUS: FAILED
+    if: ${{ failure() }}
+    name: update-failure-deployment-status
+    needs:
+    - UPDATE-DB
+    runs-on: ubuntu-latest
+    steps:
+    - name: update-failure-deployment-status
+      uses: actions/checkout@v2
+    - run: 'chmod +x ./.github/actions/update-db-runner.sh
+
+        ./.github/actions/update-db-runner.sh
+
+        '
+name: Build and Deploy to Cloud Run
+on:
+  push:
+    branches:
+    - main
